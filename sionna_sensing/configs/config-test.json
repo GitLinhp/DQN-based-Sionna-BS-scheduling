@@ -1,0 +1,148 @@
+{
+    "sensing_env": {
+        "env_path": "./scenes/One_Way_Street/one_way_street.xml",
+        "BS_pos": [
+            [-24,-360,10],
+            [21,-240,10],
+            [-24,-120,10],
+            [26,0,10],
+            [-30,120,10],
+            [27,240,10],
+            [-30,360,10]
+        ],
+        "tx_params": {
+            "num_rows": 1,
+            "num_cols": 1,
+            "vertical_spacing": 0.5,
+            "horizontal_spacing": 0.5,
+            "pattern": "dipole",
+            "polarization": "V",
+            "polarization_model": 2
+        },
+        "rx_params": {
+            "num_rows": 1,
+            "num_cols": 1,
+            "vertical_spacing": 0.5,
+            "horizontal_spacing": 0.5,
+            "pattern": "dipole",
+            "polarization": "V",
+            "polarization_model": 2
+        },
+        "frequency": 6e9,
+        "synthetic_array": true,
+        "BS_pos_trainable": false,
+        "ray_tracing_params": {
+            "max_depth": 1,
+            "method": "fibonacci",
+            "num_samples": 4e5,
+            "los": true,
+            "reflection": false,
+            "diffraction": false,
+            "scattering": false,
+            "scat_keep_prob": 0.01,
+            "edge_diffraction": false,
+            "check_scene": true,
+            "scat_random_phases": false
+        },
+        "subcarrier_spacing": 15e3,
+        "subcarrier_num": 32,
+        "doppler_params": {
+            "num_time_steps": 14
+        },
+        "music_params": {
+            "start": 0,
+            "end": 2000,
+            "step": 0.5
+        },
+        "DASX": 40.0,
+        "DASY": 780.0,
+        "TIME_SLOT": 0.05,
+        "IMAGE_RESOLUTION": [600,180]
+    },
+    "sensing_target": {
+        "target_1": {
+            "name": "car_1",
+            "material": "itu_metal",
+            "size": 1.0,
+            "initial_position": [-10,-10,0.75],
+            "initial_orientation": [90,0,0],
+            "movement": {
+                "vcrt": 0.05,
+                "vcs": 5.0,
+                "vcrg": [10,10],
+                "move_strategy": "graph",
+                "start_points":[
+                    [-10,-390,0.05]
+                ],
+                "points": [
+                    [-10.0,0,0.05]
+                ],
+                "end_points": [
+                    [-10,390,0.05]
+                ],
+                "point_bias": 0,
+                "point_path": [
+                    [0,1,0],
+                    [0,0,1],
+                    [0,0,0]
+                ]
+            }
+        },
+        "target_2": {
+            "name": "car_2",
+            "material": "itu_metal",
+            "size": 1.0,
+            "initial_position": [0,0,0.75],
+            "initial_orientation": [90,0,0],
+            "movement": {
+                "vcrt": 0.05,
+                "vcs": 5.0,
+                "vcrg": [10,10],
+                "move_strategy": "graph",
+                "start_points":[
+                    [0,-390,0.05]
+                ],
+                "points": [
+                    [0,0,0.05]
+                ],
+                "end_points": [
+                    [0,390,0.05]
+                ],
+                "point_bias": 0,
+                "point_path": [
+                    [0,1,0],
+                    [0,0,1],
+                    [0,0,0]
+                ]
+            }
+        },
+        "target_3": {
+            "name": "car_3",
+            "material": "itu_metal",
+            "size": 1.0,
+            "initial_position": [10,10,0.75],
+            "initial_orientation": [90,0,0],
+            "movement": {
+                "vcrt": 0.05,
+                "vcs": 5.0,
+                "vcrg": [10,10],
+                "move_strategy": "graph",
+                "start_points":[
+                    [10,-390,0.05]
+                ],
+                "points": [
+                    [10,0,0.05]
+                ],
+                "end_points": [
+                    [10,390,0.05]
+                ],
+                "point_bias": 0,
+                "point_path": [
+                    [0,1,0],
+                    [0,0,1],
+                    [0,0,0]
+                ]
+            }
+        }
+    }
+}

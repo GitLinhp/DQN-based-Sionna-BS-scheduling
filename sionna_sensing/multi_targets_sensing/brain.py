@@ -4,122 +4,77 @@ Sionna
 """
 
 import os
-from keras.models import Sequential, Model
-from keras.layers import Dense, Lambda, Input, Concatenate
-from keras.optimizers import *
+import numpy as np
 import tensorflow as tf
-from keras import backend as K
+from tensorflow import keras
+from keras import layers
+from keras.losses import Huber
 
-HUBER_LOSS_DELTA = 1.0
-
-def huber_loss(y_true, y_predict):
+class Brain():
     r'''
-    Huber Loss 损失函数：增强平方误差损失函数对离群点的健壮性
-        当预测误差小于 Delta 时，采用平方误差；
-        当预测误差大于 Delta 时，采用线性误差。
-    
-    Input
-    -----
-    y_true: :class:`~tf.Tensor`
-        实际值张量
-    y_predict: :class:`~tf.Tensor`
-        预测值张量
-        
-    Output
-    -----
-    K.mean(loss)
-        损失函数平均值
+    DQN 神经网络
     '''
-    err = y_true - y_predict    
-    
-    cond = K.abs(err) < HUBER_LOSS_DELTA
-    L2 = 0.5 * K.square(err)
-    L1 = HUBER_LOSS_DELTA * (K.abs(err) - 0.5 * HUBER_LOSS_DELTA)
-    loss = tf.where(cond, L2, L1) 
-
-    return K.mean(loss)
-
-
-class Brain(object):
-
-    def __init__(self, state_size, action_size, brain_name, arguments):
-        self.state_size = state_size                    # 状态空间
-        self.action_size = action_size                  # 动作空间
-        self.weight_backup = brain_name                 # 权重
-        self.batch_size = arguments['batch_size']
-        self.learning_rate = arguments['learning_rate']
-        self.test = arguments['test']
-        self.num_nodes = arguments['number_nodes']
-        self.dueling = arguments['dueling']
-        self.optimizer_model = arguments['optimizer']
-        self.model = self._build_model()
-        self.model_ = self._build_model()
+    def __init__(self, state_space, action_space, brain_name, args):
+        self.state_space = state_space
+        self.action_space = action_space
+        self.weight_backup = brain_name
+        self.batch_size = args['batch_size']
+        self.learning_rate = args['learning_rate']
+        self.test = args['test']
+        self.num_nodes = args['number_nodes']
+        self.optimizer_model = args['optimizer']
+        self.eval_net = self._build_model()         # 评估网络
+        self.target_net = self._build_model()       # 目标网络
 
     def _build_model(self):
-
-        if self.dueling:
-            x = Input(shape=(self.state_size,))
-
-            # 用于估计V(s)的一系列全连接层
-
-            y11 = Dense(self.num_nodes, activation='relu')(x)
-            y12 = Dense(self.num_nodes, activation='relu')(y11)
-            y13 = Dense(1, activation="linear")(y12)
-
-            # 用于估计A(s,a)的一系列全连接层
-
-            y21 = Dense(self.num_nodes, activation='relu')(x)
-            y22 = Dense(self.num_nodes, activation='relu')(y21)
-            y23 = Dense(self.action_size, activation="linear")(y22)
-
-            w = Concatenate(axis=-1)([y13, y23])
-
-            # combine V(s) and A(s,a) to get Q(s,a)
-            z = Lambda(lambda a: K.expand_dims(a[:, 0], axis=-1) + a[:, 1:] - K.mean(a[:, 1:], keepdims=True),
-                       output_shape=(self.action_size,))(w)
-        else:
-            x = Input(shape=(self.state_size,))
-
-            # 用于估计Q(s,a)的一系列全连接层
-
-            y1 = Dense(self.num_nodes, activation='relu')(x)
-            y2 = Dense(self.num_nodes, activation='relu')(y1)
-            z = Dense(self.action_size, activation="linear")(y2)
-
-        model = Model(inputs=x, outputs=z)
-
+        x = keras.Input(shape=self.state_space)
+                
+        y1 = layers.Flatten()(x)
+        y2 = layers.Dense(self.num_nodes, activation='relu')(y1)
+        z = layers.Dense(self.action_space, activation='linear')(y2)
+        model = keras.Model(inputs=x,outputs=z)
+        
+        # 配置优化器
         if self.optimizer_model == 'Adam':
-            optimizer = Adam(lr=self.learning_rate, clipnorm=1.)
+            optimizer = keras.optimizers.Adam(learning_rate=self.learning_rate)
         elif self.optimizer_model == 'RMSProp':
-            optimizer = RMSprop(lr=self.learning_rate, clipnorm=1.)
+            optimizer = keras.optimizers.RMSprop(learning_rate=self.learning_rate)
         else:
             print('Invalid optimizer!')
-
-        model.compile(loss=huber_loss, optimizer=optimizer)
+        
+        model.compile(loss=Huber(), optimizer=optimizer)
         
         if self.test:
             if not os.path.isfile(self.weight_backup):
                 print('Error:no file')
             else:
                 model.load_weights(self.weight_backup)
-
+        
+        # model.summary()
+        
         return model
 
-    def train(self, x, y, sample_weight=None, epochs=1, verbose=0):  # x 为网络输入，y 为网络输出
-
-        self.model.fit(x, y, batch_size=len(x), sample_weight=sample_weight, epochs=epochs, verbose=verbose)
-
+    def train(self, inputs, outputs):  
+        r'''
+        模型训练
+        
+        Input
+        -----
+        inputs: :class:`~tf.tensor`
+            网络输入    
+        outputs: :class:`~tf.tensor`
+            网络输出
+        '''
+        self.eval_net.fit(inputs, outputs, epochs=1, verbose=0)
+        
     def predict(self, state, target=False):
         if target:  # 从目标网络中获取预测 
-            return self.model_.predict(state)
-        else:       # 从本地网络中获取预测
-            return self.model.predict(state)
-
-    def predict_one_sample(self, state, target=False):
-        return self.predict(state.reshape(1,self.state_size), target=target).flatten()
-
+            return self.target_net.predict(state)
+        else:       # 从评估网络中获取预测
+            return self.eval_net.predict(state)
+    
     def update_target_model(self):
-        self.model_.set_weights(self.model.get_weights())
-
+        self.target_net.set_weights(self.eval_net.get_weights())
+        
     def save_model(self):
-        self.model.save(self.weight_backup)
+        self.eval_net.save_weights(self.weight_backup)

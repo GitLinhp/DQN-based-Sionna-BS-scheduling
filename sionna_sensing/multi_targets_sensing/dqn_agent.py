@@ -7,7 +7,7 @@ import numpy as np
 import random
 
 from sionna_sensing.multi_targets_sensing.brain import Brain                     # 神经网络
-from uniform_experience_replay import UER   # 统一经验回放
+from sionna_sensing.multi_targets_sensing.uniform_experience_replay import UER   # 统一经验回放
 
 # Epsilon-greedy 策略
 MAX_EPSILON = 1.0
@@ -17,7 +17,7 @@ MIN_EPSILON = 0.01
 MIN_BETA = 0.4
 MAX_BETA = 1.0
 
-class Agent(object):
+class Agent():
     
     epsilon = MAX_EPSILON
     beta = MIN_BETA

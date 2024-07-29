@@ -9,9 +9,9 @@ from sionna.channel import subcarrier_frequencies
 from sionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Camera
 from sionna.rt.scattering_pattern import *
 from sionna.utils.tensors import insert_dims
-from sionna_sensing.sensing_target import Target
-from sionna_sensing.sensing_paths import crb_delay, export_crb
-from sionna_sensing.dqn_agent import Agent
+from sionna_sensing.multi_targets_sensing.sensing_target import Target
+from sionna_sensing.multi_targets_sensing.sensing_paths import crb_delay
+from sionna_sensing.multi_targets_sensing.dqn_agent import Agent
 import pandas as pd
 import PIL.Image as Image
 import xml.etree.ElementTree as ET
@@ -21,7 +21,7 @@ class Environment():
         self.scene = None
         # 环境路径
         self.scene_name = kwargs.get('scene_name')
-        self.scene_path = f'./scenes/{self.scene_name.title()}/{self.scene_name}.xml'
+        self.scene_path = f'./sionna_sensing/scenes/{self.scene_name.title()}/{self.scene_name}.xml'
         # 基站参数---------------------------------------------------------
         self.BS_pos = np.array(kwargs.get('BS_pos'))    # 基站位置，过高可能导致感知效果不佳
         self.BS_num = len(self.BS_pos)                  # 基站数量
@@ -37,7 +37,7 @@ class Environment():
         # 频域信道参数 ---------------------------------------------------------
         self.subcarrier_spacing = kwargs.get('subcarrier_spacing')
         self.subcarrier_num = kwargs.get('subcarrier_num')
-        # self.frequencies = subcarrier_frequencies(self.subcarrier_num, self.subcarrier_spacing)
+        self.frequencies = subcarrier_frequencies(self.subcarrier_num, self.subcarrier_spacing)
         # 多普勒参数 ---------------------------------------------------------
         self.doppler_params = {
             "sampling_frequency": self.subcarrier_spacing,
@@ -53,8 +53,9 @@ class Environment():
         self.image_save_path = image_save_path                  # 图像保存路径
         # 目标参数 ---------------------------------------------------------
         self.target_num = len(target_configs) 
-        self.target_config(target_configs)
+        self.targets = self._target_config(target_configs)
         self.pos_now = np.zeros([self.target_num,3])
+        self.pos_next = np.zeros([self.target_num,3])
         # 初始化环境 ---------------------------------------------------------
         self.scene = self.mk_sionna_env()
         # 获取环境图片 ---------------------------------------------------------
@@ -62,58 +63,15 @@ class Environment():
         self.normalized_scene_image = self._normalize_image(self.scene_image) # 归一化场景图片
         # DQN 参数 ---------------------------------------------------------
         self.episodes_number = args['episode_number']       # 模型训练的最大代数
-        self.max_ts = args['max_timestep']                  # 
-        self.test = args['test']
-        self.filling_steps = args['first_step_memory']
-        self.steps_b_updates = args['replay_steps']
+        self.test = args['test']                            # 测试模型训练效果
+        self.filling_steps = args['first_step_memory']      # 
+        self.steps_b_updates = args['replay_steps']         # 
         self.action_space = self.target_num+1               # 动作空间，选择感知目标序号（包含不选择目标）
-        self.state_space = np.array([self.target_num, 2])   # 状态大小，各目标的x,y位置坐标
+        self.state_space = np.array([self.target_num, 2])   # 状态空间，各目标的x,y位置坐标
         
-        self.num_agents = self.target_num
-
-    def add_target(self,target:Target):
-        r'''
-        添加目标
+        self.agent_num = self.BS_num                        # 智能体数
         
-        Input
-        -----
-        target: :class:`sionna_sensing.sensing_target.Target`
-            感知目标
-        '''
-        if isinstance(target, Target) == False:
-            raise ValueError('target must be a class Target')
-        self.targets.append(target)
-    
-    def remove_target(self,target_name:str):
-        r'''
-        移除目标
-        
-        Input
-        -----
-        target: :class:`sionna_sensing.sensing_target.Target`
-            感知目标
-        '''
-        for target in self.targets:
-            if target.name == target_name:
-                self.targets.remove(target)
-                self.target_num -= 1
-                break
-        raise ValueError(f'target \'{target_name}\' not found')
-    
-    def get_target_list(self):
-        r'''
-        获取目标列表
-        
-        Output
-        -----
-        targets: list
-            目标列表, :class:`sionna_sensing.sensing_target.Target`
-        '''
-        if self.targets is None:
-            raise ValueError('no targets')
-        return self.targets
-    
-    def target_config(self,target_configs):
+    def _target_config(self,target_configs):
         r'''
         目标配置
         
@@ -121,15 +79,16 @@ class Environment():
         -----
         target_configs: dict
             目标配置参数
+            
+        Output
+        -----
+        targets: list of :class:`Target`
+            目标列表
         '''
-        self.targets = []
-        if self.target_num > 8:
-            raise ValueError('The number of targets should be less than 8')
+        targets = []
         for idx in range(self.target_num):
-            # 创建目标
-            target = Target(**target_configs.get(f'target_{idx+1}'))
-            # 将目标添加到目标列表中
-            self.add_target(target)
+            targets.append(Target(**target_configs.get(f'target_{idx+1}')))
+        return targets
         
     def mk_sionna_env(self):
         r'''
@@ -192,9 +151,9 @@ class Environment():
             self.pos_now[idx] = target.pos_now
         self.done = [False]*self.target_num                  # 用于标记各个目标移动是否
         
-        return self.get_state()
+        return self._get_state()
     
-    def get_data(self,show_scene_image=False):
+    def get_data(self):
         '''
         获取训练数据，用于离线训练
         数据格式：self.target_num*[pos_now, crbs, pos_next]
@@ -214,17 +173,11 @@ class Environment():
         '''
         self.paths = self.scene.compute_paths(**self.ray_tracing_params) # 计算路径
         crbs = self._get_crbs() # 获取 CRB
-        # 获取场景图片
-        if show_scene_image:
-            self._get_scene_image(filename="scene_test.png") 
         # 目标移动-----------------------------------------------------------------------------------
-        pos_now = np.zeros([self.target_num,3])
-        pos_next = np.zeros([self.target_num,3])
-        
         for idx,target in enumerate(self.targets):
-            pos_now[idx],pos_next[idx],self.done[idx] = target.move(self.DASX,self.DASY,self.TIME_SLOT)
+            self.pos_now[idx],self.pos_next[idx],self.done[idx] = target.move(self.DASX,self.DASY,self.TIME_SLOT)
 
-        data = tf.concat([pos_now,crbs,pos_next],axis=1)
+        data = tf.concat([self.pos_now,crbs,self.pos_next],axis=1)
         data = np.expand_dims(data, axis=0)
         
         return data, self.done
@@ -514,7 +467,7 @@ class Environment():
             masks.append(mask)
         return masks
     
-    def step(self, action, crbs):
+    def step(self, actions):
         r'''
         在线训练
         
@@ -535,17 +488,11 @@ class Environment():
         self.paths = self.scene.compute_paths(**self.ray_tracing_params)   # 计算路径
         crbs = self._get_crbs()
         #奖励 reward------------------------------------------------------------------------------------
-        for idx in range(self.target_num):
-            reward = self._get_reward(action,method='crb',crb_target=crbs)[idx,action] # 获取奖励
-        # 目标移动-----------------------------------------------------------------------------------
-        pos_now = np.zeros([self.target_num,3])
-        pos_next = np.zeros([self.target_num,3])
-        
+        reward = self._get_reward(actions,crb_target=crbs) # 获取奖励
+        # 目标移动-----------------------------------------------------------------------------------        
         for idx,target in enumerate(self.targets):
-            pos_now[idx],pos_next[idx],self.done[idx] = target.move(self.DASX,self.DASY,self.TIME_SLOT)
-        self.pos_now = pos_now
-        self.pos_next = pos_next
-        self.state_ = self.get_state()            
+            self.pos_now[idx],self.pos_next[idx],self.done[idx] = target.move(self.DASX,self.DASY,self.TIME_SLOT)
+        self.state_ = self._get_state()            
         return self.state_, reward, self.done
     
     def _get_crbs(self):
@@ -598,7 +545,7 @@ class Environment():
         
         return crb_target
     
-    def _get_reward(self,action,method='mse',crb_target:np.array=None):
+    def _get_reward(self,actions,crb_target:np.array=None):
         r'''
         获取奖励函数
         
@@ -606,10 +553,6 @@ class Environment():
         -----
         action: int
             动作
-        method: str
-            计算奖励的方法
-                'mse': 均方误差
-                'crb': CRB
         crb_target: np.array
             基站对目标感知的CRB
         
@@ -618,31 +561,35 @@ class Environment():
         rewards: float
             奖励
         '''
-        if method == 'mse':
-            # 需要修改
-            self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
-            if self.los[action]:
-                self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
-                diff = np.abs(self.range_true-self.range_est)
-                diff = diff - self.target_size
-                if diff < 0 :
-                    diff = 0
-                return diff
-            else:
-                self.range_est = 0
-                return -1
-        elif method == 'crb':
-            if crb_target is None:
-                raise ValueError('crb_target is None')
-            
+        if crb_target is None:
+            raise ValueError('crb_target is None')
+        actions = np.array(actions)
+        test = True
+    
+        if test:
+            c = -np.log10(crb_target)
+            c = data_normalization(c,method='z_score')
+            c = data_normalization(c,method='min_max')
+            reward = 0
+            # print(actions,type(actions))
+            # print(c,type(c))
+            for idx in range(self.target_num):
+                mask = np.where(actions==idx, 1, 0)
+                tmp = c[idx,:] * mask
+                reward += np.max(tmp)
+                # print(mask)
+                # print(tmp)
+                # print(np.max(tmp))
+            reward /= self.target_num
+        else:
             c = -np.log10(crb_target)
             c = data_normalization(c,method='z_score')
             c = data_normalization(c,method='min_max')
             # [BS_num,target_num]
-            rewards = c
-            return rewards
+            reward = c
+        return reward
     
-    def get_state(self,state_mode='pos'):
+    def _get_state(self,state_mode='pos'):
         r'''
         获取观测值
         
@@ -663,7 +610,8 @@ class Environment():
             pos_now = self.pos_now
             pos_now = pos_now[:,:2]/[10.,400.]
             pos_now = tf.constant(pos_now,dtype=tf.float32)
-            state = tf.reshape(pos_now,(-1))
+            # state = tf.reshape(pos_now,(-1))
+            state = pos_now
         elif state_mode == 'image':
             pass
         elif state_mode == 'both':
@@ -671,7 +619,7 @@ class Environment():
         
         return state
 
-    def run(self,agents:list):
+    def run(self,agents:list,reward_filepath: str):
         r'''
         环境运行
         
@@ -690,19 +638,17 @@ class Environment():
             reward_sum = 0          # 记录每个episode的累计奖励
             time_step = 0
             while True:
-                print(f"\r【{episode}-{time_step}th step】")
-                # 显示目标信息：target_name[(pos_now),(velocity_now)]
+                # 目标信息：target_name[(pos_now),(velocity_now)]
                 targets_info = "\t"
                 for idx, target in enumerate(self.targets):
-                    targets_info += f"target_{idx}[({float(target.pos_now[0]):.1f},{float(target.pos_now[1]):.1f},{float(target.pos_now[2]):.2f}),({target.velocity_now})] "
-                print(targets_info)
+                    targets_info += f"target_{idx}[({float(target.pos_now[0]):.1f},{float(target.pos_now[1]):.1f},{float(target.pos_now[2]):.2f}),({np.linalg.norm(target.velocity_now):.2f})] "
                 
                 actions = []
                 action_types = []
-                actions_info = "\t"
+                actions_info = "\tactions:"
                 # 执行动作
                 for idx, agent in enumerate(agents):
-                    action, action_type = agent.greedy_actor(state)
+                    action, action_type = agent.choose_action(state)
                     actions.append(action)
                     action_types.append(action_type)
                     if idx != len(agents):
@@ -710,6 +656,9 @@ class Environment():
                     else:
                         actions_info += f'{action}({action_type})'
                 state_, reward, done = self.step(actions)   # 更新环境，获取环境信息
+                
+                print(f"\r【{episode}-{time_step}th step】")
+                print(targets_info)
                 print(actions_info+f'\treward:{reward:.4f}')
                 
                 if not self.test:
@@ -733,17 +682,20 @@ class Environment():
             reward_sum_his.append(reward_sum)
             
             if not self.test:
-                if episode % 5 == 0:
-                    df = pd.DataFrame(reward_sum_his, columns=['score'])
-                    df.to_csv(file1)
-
+                if episode % 3 == 0:
+                    # 保存历史累积奖励
+                    df = pd.DataFrame(reward_sum_his, columns=['reward'])
+                    if os.path.exists(reward_filepath) == False:
+                        os.makedirs(reward_filepath)
+                    df.to_csv(reward_filepath+'reward.csv')
+                    
+                    # 保存模型
                     if total_step >= self.filling_steps:
                         if reward_sum > max_score:
                             for agent in agents:
                                 agent.brain.save_model()
                             max_score = reward_sum
             
-
 def data_normalization(data, method='min_max'):
     r'''
     数据归一化
@@ -775,7 +727,7 @@ def data_normalization(data, method='min_max'):
         normalized_data = np.log10(data)/np.log10(np.max(data))
     return normalized_data
 
-def load_sensing_scene(filename,targets):
+def load_sensing_scene(filename, targets):
     r'''
     加载感知场景: 将目标添加到xml场景文件中，再加载Sionna场景
     
@@ -805,7 +757,7 @@ def load_sensing_scene(filename,targets):
         root.append(xml)
     else:
         raise ValueError('targets must be a list of class Target or class Target')
-    new_filename = filename.replace('.xml','_tmp.xml')
+    new_filename = filename.replace('.xml','_with_targets.xml')
     with open(new_filename, 'wb') as f:
         f.write(ET.tostring(root))  
     return load_scene(new_filename)

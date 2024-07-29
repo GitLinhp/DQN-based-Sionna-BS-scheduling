@@ -9,8 +9,8 @@ from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 from sionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Camera
 from sionna.rt.scattering_pattern import *
 from sionna.utils.tensors import insert_dims
-from sionna_sensing.sensing_target import Target
-from sionna_sensing.sensing_paths import crb_delay, export_crb
+from sionna_sensing.single_target_sensing.sensing_target import Target
+from sionna_sensing.single_target_sensing.sensing_paths import crb_delay, export_crb
 import PIL.Image as Image
 import xml.etree.ElementTree as ET
 
@@ -19,7 +19,7 @@ class Environment():
         self.scene = None
         # 环境路径
         self.scene_name = kwargs.get('scene_name')
-        self.scene_path = f'./scenes/{self.scene_name.title()}/{self.scene_name}.xml'
+        self.scene_path = f'./sionna_sensing/scenes/{self.scene_name.title()}/{self.scene_name}.xml'
         # 基站参数---------------------------------------------------------
         self.BS_pos = np.array(kwargs.get('BS_pos'))    # 基站位置，过高可能导致感知效果不佳
         self.BS_num = len(self.BS_pos)                  # 基站数量

@@ -7,7 +7,8 @@ import numpy as np
 from sionna.rt.scene_object import SceneObject
 
 class Movement():
-    '''目标移动参数
+    r'''
+    目标移动参数
     '''
     def __init__(self,**kwargs):
         self.move_strategy = kwargs.get('move_strategy')    # 目标移动策略
@@ -25,9 +26,11 @@ class Movement():
             # end_points: [num3,3] float,指定的终点
             self.end_points = np.array(kwargs.get('end_points'))
             self.num_end_points = len(self.end_points)
-            # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
+            # point_bias: float,移动点偏移范围
+            # 目标会把目的点设置为以 point 为中心，point_bias为半径的圆内的随机点
             self.point_bias = kwargs.get('point_bias')
-            # point_path:[num1+num2+num3,num1+num2+num3] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为start_points,中间num2个为points,最后num3个为end_points
+            # point_path:[num1+num2+num3,num1+num2+num3] int 邻接矩阵, 表示点之间的路径关系（有向图表示）
+            # 前num1个为start_points,中间num2个为points,最后num3个为end_points
             self.point_path = np.array(kwargs.get('point_path'))
             num_path = len(self.point_path)
             # 检查路径是否与点对应
@@ -37,7 +40,6 @@ class Movement():
 
 class Target:
     r'''
-    Target()
     感知目标
     '''
     def __init__(self,**kwargs):
@@ -48,8 +50,8 @@ class Target:
         self.scale = kwargs.get('scale',(1.,1.,1.))             # 缩放
         self.rotate = kwargs.get('rotate',(0.,0.,0.,0.))        # 旋转
         self.size = kwargs.get('size')                          # 尺寸
-        self.initial_position = np.array(kwargs.get('initial_position'))                    # 初始位置
-        self.initial_orientation = np.deg2rad(np.array(kwargs.get('initial_orientation')))  # 初始朝向
+        self.initial_position = np.array(kwargs.get('initial_position'))          # 初始位置
+        self.initial_orientation = np.deg2rad(kwargs.get('initial_orientation'))  # 初始朝向
         self.pos_now = self.initial_position                    # 当前位置
         self.orientation_now = self.initial_orientation         # 当前朝向
         self.velocity_now = None                                # 当前速度
@@ -85,15 +87,15 @@ class Target:
         
     '''     
         vcrg = self.movement.vcrg
-        self.next_end = False  # 是否下一个点是终点x
+        next_end = False  # 是否下一个点是终点x
         self.pos_list = []    # 用于存储目标移动路径
-        # 生成目标移动路径, (目标移动策略: 'random','graph')
         if self.movement.move_strategy == 'random':
             # 只在平面移动
             while np.random.rand() < 0.5 or len(self.pos_list) < 2: # 以0.5的概率继续移动,或者至少移动1次
                 pos_now = np.zeros(3)
                 pos_now[0] = (np.random.rand()-0.5)*dasx
                 pos_now[1] = (np.random.rand()-0.5)*dasy
+                pos_now[2] = 0.75
                 self.pos_list.append(pos_now)
         elif self.movement.move_strategy == 'graph':
             # 随机选择一个起始位置
@@ -113,7 +115,7 @@ class Target:
                 if pos_next_idx >= self.movement.num_start_points+self.movement.num_points:
                     # 终点
                     pos_next = self.movement.end_points[pos_next_idx-self.movement.num_start_points-self.movement.num_points,:]
-                    self.next_end = True
+                    next_end = True
                 else:
                     # 移动点
                     pos_next = self.movement.points[pos_next_idx-self.movement.num_start_points,:]
@@ -124,7 +126,7 @@ class Target:
                 pos_next[1] = pos_next[1] + y_bias
                 self.pos_list.append(pos_next)
                 pos_now_idx = pos_next_idx
-                if self.next_end:
+                if next_end:
                     break
         # 生成初始位置和速度、状态
         self.path_len = len(self.pos_list)

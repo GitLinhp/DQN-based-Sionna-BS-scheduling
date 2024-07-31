@@ -1,6 +1,6 @@
 import json
 
-def config_load(filepath):
+def config_load(filename:str):
     r'''
     加载配置文件，为 json 格式
         
@@ -15,7 +15,8 @@ def config_load(filepath):
         环境配置
     target_configs: dict
         目标配置
-    '''
+    '''    
+    filepath = f'./sionna_sensing/config/{filename}.json'
     
     filetype = filepath.split('.')[-1]
     if filetype != 'json':

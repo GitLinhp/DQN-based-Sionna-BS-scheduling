@@ -27,28 +27,14 @@ class Agent():
     DQN 智能体
     '''
     def __init__(self, state_space, action_space, brain_idx,
-                 learning_rate=0.01, reward_decay=0.9, e_greedy=0.2, memory_size=1000, 
-                 batch_size=32, brain_name=None, args=None):
+                 reward_decay=0.9, brain_name=None, args=None):
         self.state_space = state_space      # 状态空间
         self.action_space = action_space    # 动作空间
-        self.learning_rate = learning_rate  # 学习率
+        self.learning_rate = args['learning_rate']  # 学习率
         self.gamma = reward_decay           # 折损因子
         
-        self.epsilon = e_greedy             # epsilon-贪心策略
-        self.epsilon_increment = 0.001      # 贪心策略增量
-        self.epsilon_max = 0.9              # 贪心策略最大值
-        
         self.b_idx = brain_idx
-
-        # 初始化记忆回放库
-        self.memory = UER(memory_size)
-        
-        self.learn_step_counter = 0                 # 学习步数
-        self.loss_his = []                          # 历史损失函数
-        self.mean_cost = 99999                      # 平均开销
-        self.reward_sum = 0                         # 累积奖励
-        self.reward_sum_his = []                    # 历史累积奖励
-        self.correct_action_rate_his = []           # 历史正确动作率
+        self.memory = UER(args['memory_capacity'])  # 初始化记忆回放库
         
         # self.best_action = best_action      # 是否使用最优动作
         # self.best_prob = best_prob          # 最优动作概率
@@ -56,12 +42,12 @@ class Agent():
         if brain_name is None:
             raise('Brain name is None!')
         # 神经网络
-        self.brain = Brain(self.state_space,self.action_space,brain_name,args)
+        self.brain = Brain(self.state_space, self.action_space, brain_name, args)
         
-        self.batch_size = batch_size        # 批次大小
+        self.batch_size = args['batch_size']        # 批次大小
         self.update_target_frequency = args['target_frequency']
         self.max_exploration_step = args['maximum_exploration']
-        self.step = 0
+        self.learning_step = 0                 # 学习步数
         self.test = args['test']
         if self.test:
             self.epsilon = MIN_EPSILON
@@ -76,25 +62,21 @@ class Agent():
         
         Input
         ----
-        state: np.array
-            当前状态
+        state: np.array, 当前状态
             
         Output
         -----
-        action: int
-            动作
-        action_type: str
-            动作类型
-                'G': greedy
-                'R': random
+        action: int, 动作
+        action_type: str, 动作类型
+            'G': greedy
+            'R': random
         '''
-        test = True
+        
         state = np.expand_dims(state, axis=0)
         if np.random.rand() <= self.epsilon:
             action = random.randrange(self.action_space)
             action_type = 'R'
         else:
-            # 无法运行
             action_value = self.brain.eval_net(state)
             action = np.argmax(action_value)
             action_type = 'G'
@@ -116,15 +98,15 @@ class Agent():
         基于经验缓慢降低 Epsilon
         '''
         
-        self.step += 1
+        self.learning_step += 1
 
         if self.test:
             self.epsilon = MIN_EPSILON
             self.beta = MAX_BETA
         else:
-            if self.step < self.max_exploration_step:
-                self.epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * (self.max_exploration_step - self.step)/self.max_exploration_step
-                self.beta = MAX_BETA + (MIN_BETA - MAX_BETA) * (self.max_exploration_step - self.step)/self.max_exploration_step
+            if self.learning_step < self.max_exploration_step:
+                self.epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * (self.max_exploration_step - self.learning_step)/self.max_exploration_step
+                self.beta = MAX_BETA + (MIN_BETA - MAX_BETA) * (self.max_exploration_step - self.learning_step)/self.max_exploration_step
             else:
                 self.epsilon = MIN_EPSILON
     
@@ -134,16 +116,14 @@ class Agent():
         
         Input
         -----
-        batch: :class:`collections.deque`
-            DQN 经验回放库
+        batch: :class:`collections.deque`, DQN 经验回放库
             
         Output
         -----
-        inputs: :class:`np.array`
-            神经网络输入
-        outputs: :class:`np.array`
-            神经网络输出
+        inputs: :class:`np.array`, 神经网络输入
+        outputs: :class:`np.array`, 神经网络输出
         '''
+        
         # batch:(state, actions, reward, state_, done)
         batch_len = len(batch)
         
@@ -169,6 +149,7 @@ class Agent():
         r'''
         经验回放
         '''
+        
         batch = self.memory.sample(self.batch_size)
         inputs, outputs = self.select_sensing_targets_uer(batch)
         self.brain.train(inputs, outputs)
@@ -177,5 +158,6 @@ class Agent():
         r'''
         更新目标模型
         '''
-        if self.step % self.update_target_frequency == 0:
+        
+        if self.learning_step % self.update_target_frequency == 0:
             self.brain.update_target_model()

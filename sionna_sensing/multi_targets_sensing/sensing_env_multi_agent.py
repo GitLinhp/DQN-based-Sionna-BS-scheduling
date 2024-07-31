@@ -11,16 +11,21 @@ from sionna.rt.scattering_pattern import *
 from sionna.utils.tensors import insert_dims
 from sionna_sensing.multi_targets_sensing.sensing_target import Target
 from sionna_sensing.multi_targets_sensing.sensing_paths import crb_delay
-from sionna_sensing.multi_targets_sensing.dqn_agent import Agent
+from sionna_sensing.multi_targets_sensing.dqn_agent_test import Agent
 import pandas as pd
 import PIL.Image as Image
 import xml.etree.ElementTree as ET
 
 class Environment():
-    def __init__(self,image_save_path,target_configs,args,**kwargs):
+    def __init__(self, folder_path, file_path, 
+                 target_configs, args, **kwargs):
+        # 文件路径参数
+        self.folder_path = folder_path
+        self.file_path = file_path
+        self.args = args
+        # 环境参数
         self.scene = None
-        # 环境路径
-        self.scene_name = kwargs.get('scene_name')
+        self.scene_name:str = kwargs.get('scene_name')
         self.scene_path = f'./sionna_sensing/scenes/{self.scene_name.title()}/{self.scene_name}.xml'
         # 基站参数---------------------------------------------------------
         self.BS_pos = np.array(kwargs.get('BS_pos'))    # 基站位置，过高可能导致感知效果不佳
@@ -50,7 +55,7 @@ class Environment():
         self.DASY = kwargs.get('DASY')                          # Y 轴限制移动范围
         self.TIME_SLOT = kwargs.get('TIME_SLOT')                # 采样时间间隔
         self.IMAGE_RESOLUTION = kwargs.get('IMAGE_RESOLUTION')  # 图像分辨率
-        self.image_save_path = image_save_path                  # 图像保存路径
+        self.image_save_path = folder_path.get('image')         # 图像保存文件夹路径
         # 目标参数 ---------------------------------------------------------
         self.target_num = len(target_configs) 
         self.targets = self._target_config(target_configs)
@@ -143,7 +148,7 @@ class Environment():
         
         Output
         -----
-        初始状态
+        initial_state: 初始状态
         '''
         for idx, target in enumerate(self.targets):
             target.generate_motion_path(self.DASX,self.DASY) # 生成目标移动路径
@@ -589,7 +594,7 @@ class Environment():
             reward = c
         return reward
     
-    def _get_state(self,state_mode='pos'):
+    def _get_state(self, state_mode='pos'):
         r'''
         获取观测值
         
@@ -603,7 +608,7 @@ class Environment():
         
         Output
         -----
-        state : :class:`~tf.Tensor`
+        state: :class:`~tf.Tensor`
             观测值
         '''        
         if state_mode == 'pos':
@@ -619,15 +624,31 @@ class Environment():
         
         return state
 
-    def run(self,agents:list,reward_filepath: str):
+    def run(self):
         r'''
         环境运行
         
-        Input
-        -----
-        agents : list of :class:`~sionna_sensing.dqn_agent.Agent` 
-            智能体（基站）列表
+        self.folder_path: dict[str, Any], 文件夹路径
+            'data':  数据文件夹路径
+            'image': 图像文件夹 
+            'reward':历史累计奖励文件夹路径
+            'loss':  历史损失值文件夹路径
+            'model': 模型文件夹路径列表
+            
+        self.file_path: dict[str, Any], 文件路径
+            'data':  数据文件路径, .npy
+            'reward':历史累计奖励文件路径, .csv
+            'loss':  历史损失值文件路径, .csv
+            'model': 模型文件路径列表, list
         '''
+        
+        agents = [] # 初始化智能体
+        for b_idx in range(self.agent_num):
+            brain_file = self.file_path.get('model')[b_idx]
+            agent = Agent(self.state_space, self.action_space, b_idx, reward_decay=0.9,
+                          brain_name=brain_file, args=self.args)
+            agents.append(agent)
+        
         total_step = 0
         reward_sum_his = [] # 历史累积奖励
         max_score = -10000
@@ -646,17 +667,17 @@ class Environment():
                 actions = []
                 action_types = []
                 actions_info = "\tactions:"
-                # 执行动作
                 for idx, agent in enumerate(agents):
-                    action, action_type = agent.choose_action(state)
+                    action, action_type = agent.choose_action(state)# 执行动作
                     actions.append(action)
                     action_types.append(action_type)
                     if idx != len(agents):
                         actions_info += f'{action}({action_type}),'
                     else:
                         actions_info += f'{action}({action_type})'
-                state_, reward, done = self.step(actions)   # 更新环境，获取环境信息
+                state_, reward, done = self.step(actions)           # 更新环境，获取环境信息
                 
+                # 打印提示信息
                 print(f"\r【{episode}-{time_step}th step】")
                 print(targets_info)
                 print(actions_info+f'\treward:{reward:.4f}')
@@ -685,9 +706,9 @@ class Environment():
                 if episode % 3 == 0:
                     # 保存历史累积奖励
                     df = pd.DataFrame(reward_sum_his, columns=['reward'])
-                    if os.path.exists(reward_filepath) == False:
-                        os.makedirs(reward_filepath)
-                    df.to_csv(reward_filepath+'reward.csv')
+                    if not os.path.exists(self.folder.get('reward')):
+                        os.makedirs(self.folder.get('reward'))
+                    df.to_csv(self.file_path.get('reward'))
                     
                     # 保存模型
                     if total_step >= self.filling_steps:

@@ -87,8 +87,8 @@ class Target:
         
     '''     
         vcrg = self.movement.vcrg
-        next_end = False  # 是否下一个点是终点x
-        self.pos_list = []    # 用于存储目标移动路径
+        next_end = False            # 是否下一个点是终点
+        self.pos_list = []          # 用于存储目标移动路径
         if self.movement.move_strategy == 'random':
             # 只在平面移动
             while np.random.rand() < 0.5 or len(self.pos_list) < 2: # 以0.5的概率继续移动,或者至少移动1次
@@ -157,8 +157,8 @@ class Target:
             当前位置
         pos_next: [float,3]
             下一时刻位置
-        velocity_now: [float,3]
-            当前速度
+        done: bool
+            是否完成移动
         '''
         if self.movement.done:
             pos_now = self.pos_now
@@ -200,4 +200,4 @@ class Target:
         self.SceneObject.position = self.pos_now        # 更新目标实例位置
         self.SceneObject.velocity = self.velocity_now   # 更新目标实例速度
         
-        return pos_now,pos_next,self.movement.done
+        return pos_now, pos_next, self.movement.done

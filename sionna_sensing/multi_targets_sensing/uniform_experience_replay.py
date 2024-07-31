@@ -5,10 +5,9 @@
 import random
 from collections import deque # 双端队列
 
-
-class UER(object):
+class UER():
     r'''
-    经验回放库，uniform experience replay
+    统一经验回放库，Uniform Experience Replay
     '''
     def __init__(self, capacity):
         self.capacity = capacity                    # 经验回放库的容量
@@ -32,7 +31,12 @@ class UER(object):
         Input
         -----
         n: int
-            抽取的样本数
+            取样的样本数
+        
+        Output
+        -----
+        sample_batch: 
+            取样的样本
         '''
         n = min(n, len(self.memory))  
         sample_batch = random.sample(self.memory, n)

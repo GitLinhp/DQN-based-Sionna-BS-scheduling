@@ -1,20 +1,20 @@
 """
-Created on Wednesday Jan  16 2019
-
-@author: Seyed Mohammad Asghari
-@github: https://github.com/s3yyy3d-m
+优先经验回放
 """
 
 import random
 from sionna_sensing.multi_targets_sensing.sum_tree import SumTree as ST
 
 
-class Memory(object):
+class PER():
+    r'''
+    优先经验回放，Prioritized Experience Replay
+    '''
     e = 0.05
 
     def __init__(self, capacity, pr_scale):
-        self.capacity = capacity
-        self.memory = ST(self.capacity)
+        self.capacity = capacity        # 经验回放库的容量
+        self.memory = ST(self.capacity) # 经验回放库
         self.pr_scale = pr_scale
         self.max_pr = 0
 
